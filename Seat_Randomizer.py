@@ -1,12 +1,15 @@
-import tkinter as tk, tkinter.messagebox, os, pickle, sys, random
+import tkinter as tk, tkinter.messagebox, os, pickle, sys, random, copy
 from tkinter.constants import *
-
+from tkinter.filedialog import asksaveasfilename
+from openpyxl import Workbook
 
 class RenderCanvas(tk.Canvas):
     def __init__(self, master, *args, **kwargs):
         tk.Canvas.__init__(self, args, kwargs)
         self.master = master
         self.seat_pos = []
+
+        self.bind("<Button-1>", self.onClick)
 
     def build_initial_structure(self, number_of_students, group_count, group_columnsize):
         self.delete(ALL)
@@ -24,9 +27,14 @@ class RenderCanvas(tk.Canvas):
         self.current_position_y = self.start_position_y
 
         self.seat_pos = []
+        self.seat_placements = []
 
+        crow = 0
+        total = 0
         while number_of_students >= 0:
             for groupnum in range(group_count):
+                self.seat_placements.append([])
+                #print(self.seat_placements)
                 for column_num in range(group_columnsize):
                     if number_of_students == 0:
                         return 0
@@ -35,32 +43,60 @@ class RenderCanvas(tk.Canvas):
                                           self.current_position_x + self.seat_size_x / 2,
                                           self.current_position_y + self.seat_size_y / 2, fill="green")
                     self.seat_pos.append((self.current_position_x, self.current_position_y))
+                    self.seat_placements[crow].append("seat"+str(total))
                     self.current_position_x += self.seat_size_x + self.seat_pad
+                    total += 1
                     number_of_students -= 1
                 self.current_position_x += self.group_pad
+                self.seat_placements[crow].append("margin")
             self.current_position_x = self.start_position_x
             self.current_position_y += self.seat_size_y + self.seat_pad
+            crow += 1
 
             """if self.current_position_x + self.seat_pad + self.seat_size_x > self.winfo_width():
                 self.current_position_y += self.seat_pad"""
+
         self.update()
 
-    def draw_seats(self, number_of_students, group_count, group_columnsize, label_arr=None):
+    def onClick(self, event):
+        pass
+
+    def draw_seats(self, number_of_students, group_count, group_columnsize, label_arr=None, hide=1):
         self.build_initial_structure(number_of_students, group_count, group_columnsize)
+        tmp = copy.copy(self.seat_placements)
         if label_arr:
             label_arr = list(label_arr)
             random.shuffle(label_arr)
             for seat in self.seat_pos:
                 self.create_text(seat[0], seat[1], font=("arial", int(self.seat_size_x / 5)), text=label_arr[0])
+
+                finished = False
+                for row in self.seat_placements:
+                    for seat in row:
+                        if "seat" in seat and not finished:
+                            tmp[self.seat_placements.index(row)][row.index(seat)] = (label_arr[0], seat)
+                            finished = True
+                            break
+
                 label_arr.pop(0)
         else:
+            tmp = copy.copy(self.seat_placements)
             cx = []
             for x in range(1, number_of_students + 1):
                 cx.append(x)
             random.shuffle(cx)
             for seat in self.seat_pos:
                 self.create_text(seat[0], seat[1], font=("arial", int(self.seat_size_x / 5)), text=str(cx[0]))
+                finished = False
+                for row in self.seat_placements:
+                    for seat in row:
+                        if "seat" in seat and not finished:
+                            tmp[self.seat_placements.index(row)][row.index(seat)] = (str(cx[0]), seat)
+                            finished = True
+                            break
                 cx.pop(0)
+
+        self.seat_placements = tmp
 
 
 class OptionFrame(tk.Frame):
@@ -71,6 +107,8 @@ class OptionFrame(tk.Frame):
 
         self.toggle_group_options = tk.IntVar()
         self.toggle_group_options.set(1)
+        self.toggle_hide = tk.IntVar()
+        self.toggle_hide.set(1)
         self.student_count = tk.IntVar()
         self.group_count = tk.IntVar()
         self.group_count.set(3)
@@ -79,7 +117,7 @@ class OptionFrame(tk.Frame):
 
         self.config_frame = tk.Frame(self, bd=2, relief=SUNKEN)
         self.config_frame.grid(row=0, column=0)
-
+        tk.Button(self.config_frame, text="엑셀파일로 저장", command=self.on_save_excel).pack(side=BOTTOM)
         tk.Button(self.config_frame, text="자리 배치하기", command=self.on_generate_seats, bg="yellow", fg="red").pack(
             side=BOTTOM)
         tk.Button(self.config_frame, text="책상 배열하기", command=self.on_create_tables).pack(side=BOTTOM)
@@ -89,6 +127,8 @@ class OptionFrame(tk.Frame):
 
         tk.Checkbutton(self.config_frame, text="이름목록 사용하기", variable=self.toggle_group_options,
                        command=self.check_group_options).pack(side=BOTTOM, anchor=W)
+
+        #tk.Checkbutton(self.config_frame, text="가리기", variable=self.toggle_hide).pack(side=BOTTOM, anchor=W)
 
         tk.Label(self.config_frame, text="학생 수").pack(side=LEFT)
         self.student_count_entry = tk.Entry(self.config_frame, textvariable=self.student_count)
@@ -153,13 +193,13 @@ class OptionFrame(tk.Frame):
                 tkinter.messagebox.showinfo("", "학생수, 모둠수, 모둠 크기를 확인해주세요.")
             else:
                 self.renderer_object.draw_seats(len(self.student_listbox.get(0, END)), self.group_count.get(),
-                                                self.group_column_size.get(), self.student_listbox.get(0, END))
+                                                self.group_column_size.get(), self.student_listbox.get(0, END), self.toggle_hide.get())
         else:
             if self.student_count.get() == 0:
                 tkinter.messagebox.showinfo("", "학생수를 확인해주세요")
             else:
                 self.renderer_object.draw_seats(self.student_count.get(), self.group_count.get(),
-                                                self.group_column_size.get())
+                                                self.group_column_size.get(), self.toggle_hide.get())
 
     def check_group_options(self):
         if self.toggle_group_options.get():
@@ -187,6 +227,24 @@ class OptionFrame(tk.Frame):
             self.student_listbox.delete(self.student_listbox.curselection()[0])
             with open("students.pickle", "wb") as outfile:
                 pickle.dump(self.student_listbox.get(0, END), outfile)
+
+    def on_save_excel(self):
+        filename = asksaveasfilename(initialdir=os.getcwd(), title=" 엑셀로 저장하기", defaultextension=".xlsx", filetypes=(("엑셀 문서","*.xlsx"),))
+        if filename:
+            print(filename)
+            print(self.renderer_object.seat_placements)
+            wb = Workbook()
+            ws = wb.active
+            for row in self.renderer_object.seat_placements:
+                dt = []
+                for data in row:
+                    if data == "margin":
+                        dt.append("")
+                    else:
+                        dt.append(data[0])
+                ws.append(dt)
+            wb.save(filename)
+
 
 
 root = tk.Tk()
